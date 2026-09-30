@@ -1,0 +1,6 @@
+{
+  "name": "تركيز — مؤقت الدراسة الفعلي",
+  "description": "تطبيق دراسة عربي حديث، بسيط، وفخم لتسجيل وقت التركيز الحقيقي بدون تعقيد.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
