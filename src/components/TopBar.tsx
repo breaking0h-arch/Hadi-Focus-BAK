@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, Maximize2, Sun, Moon } from 'lucide-react';
+import { Volume2, VolumeX, Maximize2, Sun, Moon, Contrast } from 'lucide-react';
 import { NavigationTab } from '../types/study';
 import { ThemeMode } from '../utils/storage';
 import { ExamCountdownBadge } from './ExamCountdownBadge';
@@ -11,6 +11,7 @@ interface TopBarProps {
   onToggleSound: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
+  onSelectTheme?: (theme: ThemeMode) => void;
   onEnterFullscreen: () => void;
 }
 
@@ -21,6 +22,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleSound,
   theme,
   onToggleTheme,
+  onSelectTheme,
   onEnterFullscreen,
 }) => {
   const navItems: { id: NavigationTab; label: string }[] = [
@@ -29,14 +31,24 @@ export const TopBar: React.FC<TopBarProps> = ({
     { id: 'settings', label: 'الإعدادات' },
   ];
 
-  const isDark = theme === 'dark';
+  const getThemeIcon = () => {
+    if (theme === 'light') return <Sun className="w-4 h-4 text-amber-500" />;
+    if (theme === 'navy') return <Moon className="w-4 h-4 text-blue-400" />;
+    return <Contrast className="w-4 h-4 text-slate-100" />;
+  };
+
+  const getThemeTitle = () => {
+    if (theme === 'light') return 'الوضع الحالي: نهاري أبيض (انقر للتبديل إلى كحلي)';
+    if (theme === 'navy') return 'الوضع الحالي: ليلي كحلي (انقر للتبديل إلى أسود داكن)';
+    return 'الوضع الحالي: أسود داكن فاخر (انقر للتبديل إلى نهاري)';
+  };
 
   return (
     <header className="w-full border-b border-slate-100 dark:border-slate-800/90 bg-white/95 dark:bg-[#0F172A]/95 backdrop-blur-md sticky top-0 z-30 transition-colors duration-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-2.5 md:py-0 md:h-20 flex flex-col md:flex-row md:items-center md:justify-between gap-2.5">
-        {/* Top Row on Mobile / Right & Center Zones on Desktop */}
-        <div className="flex items-center justify-between md:justify-start md:gap-10">
-          {/* Zone 1: Single text element wordmark */}
+        {/* Right & Center Zones: Brand + Nav */}
+        <div className="flex items-center justify-between md:justify-start md:gap-8">
+          {/* Wordmark */}
           <button
             type="button"
             onClick={() => onSelectTab('home')}
@@ -45,7 +57,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             تركيز
           </button>
 
-          {/* Zone 2: Clean text navigation links */}
+          {/* Nav links */}
           <nav aria-label="التنقل الرئيسي" className="flex items-center gap-5 sm:gap-7">
             {navItems.map((item) => {
               const isActive = activeTab === item.id;
@@ -69,16 +81,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             })}
           </nav>
 
-          {/* Mobile-only quick actions so the top row stays balanced */}
+          {/* Mobile Actions */}
           <div className="flex md:hidden items-center gap-1.5">
             <button
               type="button"
               onClick={onToggleTheme}
-              title={isDark ? 'الوضع النهاري' : 'الوضع الليلي'}
-              aria-label={isDark ? 'الوضع النهاري' : 'الوضع الليلي'}
+              title={getThemeTitle()}
+              aria-label={getThemeTitle()}
               className="h-9 w-9 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center transition-colors"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {getThemeIcon()}
             </button>
 
             <button
@@ -111,22 +123,60 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
 
-        {/* Left Zone (in RTL): Exam Countdown Capsule + Desktop Actions */}
+        {/* Left Zone: Live Exam Countdown Badge + Desktop Utilities */}
         <div className="flex items-center justify-between md:justify-end gap-2.5">
           <div className="w-full md:w-auto">
             <ExamCountdownBadge />
           </div>
 
           <div className="hidden md:flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              title={isDark ? 'الوضع النهاري' : 'الوضع الليلي'}
-              aria-label={isDark ? 'الوضع النهاري' : 'الوضع الليلي'}
-              className="h-10 w-10 rounded-xl border border-slate-200/80 dark:border-slate-700/80 hover:border-blue-200 dark:hover:border-blue-500/40 bg-white dark:bg-[#1E293B] text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center transition-colors"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            {/* 3-Theme Segmented Switcher */}
+            <div className="flex items-center p-1 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/60 transition-colors">
+              <button
+                type="button"
+                onClick={() => (onSelectTheme ? onSelectTheme('light') : onToggleTheme())}
+                title="الوضع النهاري (أبيض ناصع)"
+                aria-label="الوضع النهاري"
+                className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  theme === 'light'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden xl:inline text-[11px]">نهاري</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => (onSelectTheme ? onSelectTheme('navy') : onToggleTheme())}
+                title="الوضع الكحلي (ليلي هادئ)"
+                aria-label="الوضع الكحلي"
+                className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  theme === 'navy'
+                    ? 'bg-[#1E293B] text-blue-400 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden xl:inline text-[11px]">كحلي</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => (onSelectTheme ? onSelectTheme('black') : onToggleTheme())}
+                title="الوضع الأسود (داكن فاخر AMOLED)"
+                aria-label="الوضع الأسود"
+                className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  theme === 'black'
+                    ? 'bg-black text-blue-400 border border-slate-700/80 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <Contrast className="w-3.5 h-3.5 text-slate-100" />
+                <span className="hidden xl:inline text-[11px]">أسود</span>
+              </button>
+            </div>
 
             <button
               type="button"

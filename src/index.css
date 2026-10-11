@@ -23,10 +23,92 @@
     transition: background-color 200ms ease, color 200ms ease;
   }
 
-  html.dark body {
+  /* Global scrollbar hiding while preserving scroll functionality */
+  html,
+  body {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / Edge legacy */
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0px;
+    height: 0px;
+    background: transparent;
+  }
+
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  /* Navy Theme (Default dark mode) */
+  html.dark.theme-navy body,
+  html.dark:not(.theme-black) body {
     background-color: #0f172a;
     color: #f1f5f9;
   }
+
+  /* Pure AMOLED Black Theme */
+  html.dark.theme-black body {
+    background-color: #000000;
+    color: #f4f4f5;
+  }
+}
+
+/* Luxurious Pure Black Theme Overrides */
+html.theme-black .bg-\[\#0F172A\],
+html.theme-black .bg-\[\#0f172a\],
+html.theme-black .dark\:bg-\[\#0F172A\],
+html.theme-black .dark\:bg-\[\#0f172a\] {
+  background-color: #000000 !important;
+}
+
+html.theme-black .dark\:bg-\[\#0F172A\]\/95,
+html.theme-black .bg-\[\#0F172A\]\/95 {
+  background-color: rgba(0, 0, 0, 0.94) !important;
+}
+
+html.theme-black .bg-\[\#1E293B\],
+html.theme-black .bg-\[\#1e293b\],
+html.theme-black .dark\:bg-\[\#1E293B\],
+html.theme-black .dark\:bg-\[\#1e293b\],
+html.theme-black .dark\:bg-slate-900 {
+  background-color: #09090b !important;
+}
+
+html.theme-black .dark\:bg-slate-800,
+html.theme-black .dark\:bg-slate-800\/60,
+html.theme-black .dark\:bg-slate-800\/70,
+html.theme-black .dark\:bg-slate-800\/80,
+html.theme-black .dark\:bg-slate-800\/90 {
+  background-color: #121216 !important;
+}
+
+html.theme-black .dark\:bg-slate-800\/50,
+html.theme-black .dark\:bg-slate-800\/40,
+html.theme-black .dark\:bg-slate-800\/20 {
+  background-color: rgba(20, 20, 26, 0.6) !important;
+}
+
+html.theme-black .dark\:bg-blue-950\/40,
+html.theme-black .dark\:bg-blue-950\/50,
+html.theme-black .dark\:bg-blue-950\/60,
+html.theme-black .dark\:bg-blue-950\/70 {
+  background-color: rgba(14, 25, 48, 0.5) !important;
+}
+
+html.theme-black .dark\:border-slate-800,
+html.theme-black .dark\:border-slate-800\/80,
+html.theme-black .dark\:border-slate-800\/90,
+html.theme-black .dark\:border-slate-800\/60,
+html.theme-black .dark\:border-slate-800\/50,
+html.theme-black .dark\:border-slate-700,
+html.theme-black .dark\:border-slate-700\/80,
+html.theme-black .dark\:border-slate-700\/60 {
+  border-color: #1c1c22 !important;
 }
 
 .font-timer {

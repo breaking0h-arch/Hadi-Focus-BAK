@@ -10,20 +10,24 @@ const STORAGE_KEYS = {
   THEME: 'tarkeez_theme_v1',
 } as const;
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'light' | 'navy' | 'black';
 
 export function loadTheme(): ThemeMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.THEME);
-    if (saved === 'light' || saved === 'dark') {
+    if (saved === 'light' || saved === 'navy' || saved === 'black') {
       return saved;
+    }
+    // Backward compatibility with legacy 'dark'
+    if (saved === 'dark') {
+      return 'navy';
     }
     if (
       typeof window !== 'undefined' &&
       window.matchMedia &&
       window.matchMedia('(prefers-color-scheme: dark)').matches
     ) {
-      return 'dark';
+      return 'navy';
     }
     return 'light';
   } catch {
@@ -51,10 +55,12 @@ export const DEFAULT_SUBJECTS: Subject[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  focusMinutes: 25,
+  focusMinutes: 90,
   breakMinutes: 5,
   soundEnabled: true,
   autoStartBreak: false,
+  strictModeEnabled: true,
+  completionSoundTheme: 'victory',
 };
 
 function createInitialSampleSessions(): StudySession[] {
@@ -218,6 +224,11 @@ export function loadSettings(): AppSettings {
         typeof parsed.autoStartBreak === 'boolean'
           ? parsed.autoStartBreak
           : DEFAULT_SETTINGS.autoStartBreak,
+      completionSoundTheme:
+        typeof parsed.completionSoundTheme === 'string' &&
+        ['victory', 'crystal', 'celestial', 'energetic'].includes(parsed.completionSoundTheme)
+          ? parsed.completionSoundTheme
+          : DEFAULT_SETTINGS.completionSoundTheme,
     };
   } catch {
     return DEFAULT_SETTINGS;

@@ -24,13 +24,23 @@ export interface StudySession {
   endedAt: number;
   /** Local date string YYYY-MM-DD */
   dateKey: string;
+  /** Micro-commitment pledge written before session */
+  taskGoal?: string;
+  /** Whether commitment was marked as completed */
+  goalCompleted?: boolean;
 }
+
+export type CompletionSoundTheme = 'victory' | 'crystal' | 'celestial' | 'energetic';
 
 export interface AppSettings {
   focusMinutes: number;
   breakMinutes: number;
   soundEnabled: boolean;
   autoStartBreak: boolean;
+  /** Strict anti-quit shield enabling 10s cooldown before early exit */
+  strictModeEnabled?: boolean;
+  /** Custom completion audio theme */
+  completionSoundTheme?: CompletionSoundTheme;
 }
 
 export interface PersistedTimerState {
@@ -44,4 +54,6 @@ export interface PersistedTimerState {
   lastResumedAt: number | null;
   /** Epoch timestamp (ms) when this session originally started */
   sessionStartedAt: number | null;
+  /** Ongoing micro-commitment */
+  taskGoal?: string;
 }

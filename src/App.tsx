@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ArrowLeft,
   Clock,
+  Flame,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -47,31 +48,46 @@ import { CircularTimer } from './components/CircularTimer';
 import { FullscreenFocusView } from './components/FullscreenFocusView';
 import { StudyLogView } from './components/StudyLogView';
 import { SettingsView } from './components/SettingsView';
+import { AntiQuitShieldModal } from './components/AntiQuitShieldModal';
+import { MicroCommitmentPledge } from './components/MicroCommitmentPledge';
 
 interface CompletionNotice {
   title: string;
   subtitle: string;
 }
 
+const FOCUS_PRESETS = [90, 60, 45, 25];
+
 export default function App() {
-  // Theme State (persisted in localStorage, defaults to system preference on first visit)
+  // Theme State
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
+    root.classList.remove('dark', 'theme-navy', 'theme-black', 'theme-light');
+    if (theme === 'navy') {
+      root.classList.add('dark', 'theme-navy');
+    } else if (theme === 'black') {
+      root.classList.add('dark', 'theme-black');
     } else {
-      root.classList.remove('dark');
+      root.classList.add('theme-light');
     }
   }, [theme]);
 
   const handleToggleTheme = useCallback(() => {
     setTheme((prev) => {
-      const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
+      let next: ThemeMode = 'navy';
+      if (prev === 'light') next = 'navy';
+      else if (prev === 'navy') next = 'black';
+      else next = 'light';
       saveTheme(next);
       return next;
     });
+  }, []);
+
+  const handleSelectTheme = useCallback((mode: ThemeMode) => {
+    setTheme(mode);
+    saveTheme(mode);
   }, []);
 
   // Navigation
@@ -83,7 +99,7 @@ export default function App() {
   const [sessions, setSessions] = useState<StudySession[]>(() => loadSessions());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
-  // Timer State (Initialized from persisted state if available)
+  // Timer State
   const initialTimer = useMemo(() => loadPersistedTimer(), []);
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(() => {
@@ -97,7 +113,7 @@ export default function App() {
   const [targetDurationSec, setTargetDurationSec] = useState<number>(() => {
     if (initialTimer?.targetDurationSec) return initialTimer.targetDurationSec;
     const s = loadSettings();
-    return s.focusMinutes * 60;
+    return (s.focusMinutes || 90) * 60;
   });
   const [accumulatedElapsedMs, setAccumulatedElapsedMs] = useState<number>(
     () => initialTimer?.accumulatedElapsedMs || 0
@@ -108,12 +124,18 @@ export default function App() {
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(
     () => initialTimer?.sessionStartedAt || null
   );
+  const [taskGoal, setTaskGoal] = useState<string>(
+    () => initialTimer?.taskGoal || ''
+  );
 
-  // Real-time clock tick for accurate timestamp calculation
+  // Anti-Quit Shield State
+  const [isShieldOpen, setIsShieldOpen] = useState<boolean>(false);
+
+  // Real-time clock tick
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [completionNotice, setCompletionNotice] = useState<CompletionNotice | null>(null);
 
-  const isDark = theme === 'dark';
+  const isDark = theme !== 'light';
 
   // Selected subject object
   const selectedSubject = useMemo(() => {
@@ -123,61 +145,63 @@ export default function App() {
     );
   }, [subjects, selectedSubjectId]);
 
-  // Persist timer state whenever it changes
+  // Persist timer state
   useEffect(() => {
-    if (status === 'idle') {
-      savePersistedTimer(null);
-    } else {
-      const stateToSave: PersistedTimerState = {
-        status,
-        mode,
-        subjectId: selectedSubject.id,
-        targetDurationSec,
-        accumulatedElapsedMs,
-        lastResumedAt,
-        sessionStartedAt,
-      };
-      savePersistedTimer(stateToSave);
-    }
+    const state: PersistedTimerState = {
+      mode,
+      status,
+      subjectId: selectedSubjectId,
+      targetDurationSec,
+      accumulatedElapsedMs,
+      lastResumedAt,
+      sessionStartedAt,
+      taskGoal,
+    };
+    savePersistedTimer(state);
   }, [
-    status,
     mode,
-    selectedSubject.id,
+    status,
+    selectedSubjectId,
     targetDurationSec,
     accumulatedElapsedMs,
     lastResumedAt,
     sessionStartedAt,
+    taskGoal,
   ]);
 
-  // Calculate exact elapsed & remaining seconds from real timestamps
+  // Elapsed and remaining calculations
   const totalElapsedMs = useMemo(() => {
-    if (status === 'idle') return 0;
-    if (status === 'paused' || lastResumedAt === null) {
-      return accumulatedElapsedMs;
+    if (status === 'running' && lastResumedAt) {
+      return accumulatedElapsedMs + Math.max(0, nowMs - lastResumedAt);
     }
-    return accumulatedElapsedMs + Math.max(0, nowMs - lastResumedAt);
-  }, [status, accumulatedElapsedMs, lastResumedAt, nowMs]);
+    return accumulatedElapsedMs;
+  }, [status, lastResumedAt, accumulatedElapsedMs, nowMs]);
 
-  const elapsedSeconds = Math.floor(totalElapsedMs / 1000);
-  const remainingSeconds = Math.max(0, targetDurationSec - elapsedSeconds);
+  const remainingSeconds = useMemo(() => {
+    const elapsedSec = Math.floor(totalElapsedMs / 1000);
+    return Math.max(0, targetDurationSec - elapsedSec);
+  }, [totalElapsedMs, targetDurationSec]);
 
-  // Update document title with live timer when running/paused
+  // Dynamic Browser Tab Title
   useEffect(() => {
-    if (status === 'running' || status === 'paused') {
-      const digits = formatTimerDigits(remainingSeconds);
-      const label = mode === 'focus' ? selectedSubject.name : 'استراحة';
-      document.title = `(${digits}) ${label} — تركيز`;
+    if (status === 'running') {
+      const formatted = formatTimerDigits(remainingSeconds);
+      document.title = `(${formatted}) ${selectedSubject.name} — تركيز`;
+    } else if (status === 'paused') {
+      document.title = `(متوقف) ${selectedSubject.name} — تركيز`;
     } else {
       document.title = 'تركيز — مؤقت الدراسة الفعلي';
     }
-  }, [status, remainingSeconds, mode, selectedSubject.name]);
+  }, [status, remainingSeconds, selectedSubject.name]);
 
-  // Record a study session into the persistent log
+  // Record a finished study session cleanly into the log
   const recordStudySession = useCallback(
     (durationSec: number, startMs: number, endMs: number) => {
       if (durationSec < 1) return;
+      const sessionId = `session-${endMs}-${Math.random().toString(36).slice(2, 7)}`;
+
       const newSession: StudySession = {
-        id: `session-${endMs}-${Math.random().toString(36).slice(2, 7)}`,
+        id: sessionId,
         subjectId: selectedSubject.id,
         subjectName: selectedSubject.name,
         durationSec,
@@ -185,6 +209,8 @@ export default function App() {
         startedAt: startMs,
         endedAt: endMs,
         dateKey: toLocalDateKey(endMs),
+        taskGoal: taskGoal.trim() ? taskGoal.trim() : undefined,
+        goalCompleted: true,
       };
 
       setSessions((prev) => {
@@ -193,10 +219,10 @@ export default function App() {
         return updated;
       });
     },
-    [selectedSubject.id, selectedSubject.name, targetDurationSec]
+    [selectedSubject.id, selectedSubject.name, targetDurationSec, taskGoal]
   );
 
-  // Handle natural timer completion (when remainingSeconds hits 0)
+  // Handle natural timer completion
   useEffect(() => {
     if (status !== 'running') return;
     if (totalElapsedMs < targetDurationSec * 1000) return;
@@ -204,7 +230,7 @@ export default function App() {
     const endMs = Date.now();
     const startMs = sessionStartedAt || endMs - targetDurationSec * 1000;
 
-    playCompletionChime(settings.soundEnabled);
+    playCompletionChime(settings.soundEnabled, settings.completionSoundTheme);
 
     if (mode === 'focus') {
       recordStudySession(targetDurationSec, startMs, endMs);
@@ -219,15 +245,16 @@ export default function App() {
       setAccumulatedElapsedMs(0);
       setLastResumedAt(null);
       setSessionStartedAt(null);
+      setTaskGoal('');
     } else {
       setCompletionNotice({
         title: 'انتهت الاستراحة القصيرة',
-        subtitle: `جاهز لبدء جلسة تركيز جديدة في مادة ${selectedSubject.name}`,
+        subtitle: `جاهز لبدء جلسة تركيز جديدة`,
       });
 
       setStatus('idle');
       setMode('focus');
-      setTargetDurationSec(settings.focusMinutes * 60);
+      setTargetDurationSec((settings.focusMinutes || 90) * 60);
       setAccumulatedElapsedMs(0);
       setLastResumedAt(null);
       setSessionStartedAt(null);
@@ -245,40 +272,60 @@ export default function App() {
     selectedSubject.name,
   ]);
 
-  // High-precision ticker + tab visibility sync
+  // High precision timer interval
   useEffect(() => {
     if (status !== 'running') return;
-
-    const tick = () => {
+    const interval = setInterval(() => {
       setNowMs(Date.now());
-    };
-
-    tick();
-    const intervalId = window.setInterval(tick, 200);
-
-    const handleVisibilityOrFocus = () => {
-      setNowMs(Date.now());
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-    };
+    }, 250);
+    return () => clearInterval(interval);
   }, [status]);
 
-  // Auto-dismiss completion banner after 6 seconds
+  // Sync when tab visibility changes
   useEffect(() => {
-    if (!completionNotice) return;
-    const t = window.setTimeout(() => setCompletionNotice(null), 6000);
-    return () => window.clearTimeout(t);
-  }, [completionNotice]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setNowMs(Date.now());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Sync fullscreen state
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsFullscreen(active);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleEnterFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // Fallback
+    }
+    setIsFullscreen(true);
+  }, []);
+
+  const handleExitFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Ignore
+    }
+    setIsFullscreen(false);
+  }, []);
 
   // Timer Controls
-  const handleStart = useCallback(() => {
+  const handleStartSession = useCallback(() => {
     const now = Date.now();
     playSoftInteractionTone(settings.soundEnabled);
     setCompletionNotice(null);
@@ -289,6 +336,11 @@ export default function App() {
     setStatus('running');
   }, [settings.soundEnabled]);
 
+  const handleStartAndFullscreen = useCallback(() => {
+    handleStartSession();
+    handleEnterFullscreen();
+  }, [handleStartSession, handleEnterFullscreen]);
+
   const handlePause = useCallback(() => {
     if (status !== 'running') return;
     const now = Date.now();
@@ -296,7 +348,6 @@ export default function App() {
     const additional = lastResumedAt ? Math.max(0, now - lastResumedAt) : 0;
     setAccumulatedElapsedMs((prev) => prev + additional);
     setLastResumedAt(null);
-    setNowMs(now);
     setStatus('paused');
   }, [status, lastResumedAt, settings.soundEnabled]);
 
@@ -310,16 +361,19 @@ export default function App() {
   }, [status, settings.soundEnabled]);
 
   const handleReset = useCallback(() => {
+    playSoftInteractionTone(settings.soundEnabled);
     setStatus('idle');
     setAccumulatedElapsedMs(0);
     setLastResumedAt(null);
     setSessionStartedAt(null);
     setTargetDurationSec(
-      mode === 'focus' ? settings.focusMinutes * 60 : settings.breakMinutes * 60
+      mode === 'focus' ? (settings.focusMinutes || 90) * 60 : settings.breakMinutes * 60
     );
-  }, [mode, settings.focusMinutes, settings.breakMinutes]);
+  }, [mode, settings.focusMinutes, settings.breakMinutes, settings.soundEnabled]);
 
-  const handleEndSessionEarly = useCallback(() => {
+  // Actual quit execution after confirmation
+  const confirmEndSessionEarly = useCallback(() => {
+    setIsShieldOpen(false);
     if (status === 'idle') return;
     const now = Date.now();
     const currentTotalMs =
@@ -335,9 +389,9 @@ export default function App() {
     if (mode === 'focus' && studiedSec >= 1) {
       const startMs = sessionStartedAt || now - studiedSec * 1000;
       recordStudySession(studiedSec, startMs, now);
-      playCompletionChime(settings.soundEnabled);
+      playCompletionChime(settings.soundEnabled, settings.completionSoundTheme);
       setCompletionNotice({
-        title: 'تم حفظ الجلسة في السجل',
+        title: 'تم إنهاء الجلسة وحفظها في السجل',
         subtitle: `${selectedSubject.name} · ${formatDurationClock(studiedSec)}`,
       });
     }
@@ -347,7 +401,7 @@ export default function App() {
     setLastResumedAt(null);
     setSessionStartedAt(null);
     setTargetDurationSec(
-      mode === 'focus' ? settings.focusMinutes * 60 : settings.breakMinutes * 60
+      mode === 'focus' ? (settings.focusMinutes || 90) * 60 : settings.breakMinutes * 60
     );
   }, [
     status,
@@ -363,36 +417,37 @@ export default function App() {
     selectedSubject.name,
   ]);
 
+  // Intercept early quit if Anti-Quit Shield is active
+  const handleRequestEndSessionEarly = useCallback(() => {
+    if (status === 'idle') return;
+    const currentStudiedSec = Math.floor(totalElapsedMs / 1000);
+
+    // If strict mode is enabled and user hasn't finished the goal duration yet
+    if (
+      settings.strictModeEnabled !== false &&
+      mode === 'focus' &&
+      currentStudiedSec < targetDurationSec - 30
+    ) {
+      setIsShieldOpen(true);
+      return;
+    }
+
+    confirmEndSessionEarly();
+  }, [status, totalElapsedMs, settings.strictModeEnabled, mode, targetDurationSec, confirmEndSessionEarly]);
+
   const handleSwitchMode = (newMode: TimerMode) => {
     if (status !== 'idle') return;
     setMode(newMode);
     setTargetDurationSec(
-      newMode === 'focus' ? settings.focusMinutes * 60 : settings.breakMinutes * 60
+      newMode === 'focus' ? (settings.focusMinutes || 90) * 60 : settings.breakMinutes * 60
     );
   };
 
-  // Fullscreen helpers
-  const handleEnterFullscreen = useCallback(() => {
-    setIsFullscreen(true);
-    try {
-      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    } catch {
-      // Ignore in restricted iframe
-    }
-  }, []);
-
-  const handleExitFullscreen = useCallback(() => {
-    setIsFullscreen(false);
-    try {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-    } catch {
-      // Ignore
-    }
-  }, []);
+  const handleQuickDurationChange = (mins: number) => {
+    if (status !== 'idle' || mode !== 'focus') return;
+    setTargetDurationSec(mins * 60);
+    handleUpdateSettings({ ...settings, focusMinutes: mins });
+  };
 
   // Subject Handlers
   const handleAddSubject = useCallback((name: string) => {
@@ -421,36 +476,28 @@ export default function App() {
     (id: string) => {
       setSubjects((prev) => {
         if (prev.length <= 1) return prev;
-        const updated = prev.filter((s) => s.id !== id);
-        saveSubjects(updated);
-        if (selectedSubjectId === id && updated.length > 0) {
-          setSelectedSubjectId(updated[0].id);
+        const filtered = prev.filter((s) => s.id !== id);
+        saveSubjects(filtered);
+        if (selectedSubjectId === id) {
+          setSelectedSubjectId(filtered[0]?.id || DEFAULT_SUBJECTS[0].id);
         }
-        return updated;
+        return filtered;
       });
     },
     [selectedSubjectId]
   );
 
   const handleResetDefaultSubjects = useCallback(() => {
-    saveSubjects(DEFAULT_SUBJECTS);
     setSubjects(DEFAULT_SUBJECTS);
+    saveSubjects(DEFAULT_SUBJECTS);
     setSelectedSubjectId(DEFAULT_SUBJECTS[0].id);
   }, []);
 
-  // Settings & Log Handlers
-  const handleUpdateSettings = useCallback(
-    (newSettings: AppSettings) => {
-      setSettings(newSettings);
-      saveSettings(newSettings);
-      if (status === 'idle') {
-        setTargetDurationSec(
-          mode === 'focus' ? newSettings.focusMinutes * 60 : newSettings.breakMinutes * 60
-        );
-      }
-    },
-    [status, mode]
-  );
+  // Settings Handlers
+  const handleUpdateSettings = useCallback((newSettings: AppSettings) => {
+    setSettings(newSettings);
+    saveSettings(newSettings);
+  }, []);
 
   const handleToggleSound = useCallback(() => {
     setSettings((prev) => {
@@ -460,6 +507,7 @@ export default function App() {
     });
   }, []);
 
+  // Study Log Actions
   const handleDeleteSession = useCallback((id: string) => {
     setSessions((prev) => {
       const updated = prev.filter((s) => s.id !== id);
@@ -473,7 +521,7 @@ export default function App() {
     saveSessions([]);
   }, []);
 
-  // Today's study summary & latest session for the bottom of the Home screen
+  // Summary info for footer
   const homeFooterSummary = useMemo(() => {
     const todayKey = toLocalDateKey(Date.now());
     let todayTotalSec = 0;
@@ -482,16 +530,21 @@ export default function App() {
         todayTotalSec += s.durationSec;
       }
     }
-    const latestSession = sessions.length > 0 ? sessions[0] : null;
-    return { todayTotalSec, latestSession };
+    const latest = sessions[0] || null;
+    return {
+      todayTotalSec,
+      latestSession: latest,
+    };
   }, [sessions]);
+
+  const currentDurationMins = Math.round(targetDurationSec / 60);
 
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-white dark:bg-[#0F172A] text-slate-950 dark:text-slate-100 flex flex-col relative transition-colors duration-200"
+      className="min-h-screen flex flex-col bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 antialiased font-sans transition-colors duration-200"
     >
-      {/* Fullscreen Focus Mode Overlay */}
+      {/* Fullscreen Focus Overlay */}
       {isFullscreen && (
         <FullscreenFocusView
           subjectName={selectedSubject.name}
@@ -500,15 +553,26 @@ export default function App() {
           status={status}
           mode={mode}
           theme={theme}
+          taskGoal={taskGoal}
           onToggleTheme={handleToggleTheme}
-          onStart={handleStart}
+          onStart={handleStartSession}
           onPause={handlePause}
           onResume={handleResume}
-          onEndSession={handleEndSessionEarly}
+          onEndSession={handleRequestEndSessionEarly}
           onReset={handleReset}
           onExitFullscreen={handleExitFullscreen}
         />
       )}
+
+      {/* Anti-Quit Shield Modal (10s Psychological Cooldown) */}
+      <AntiQuitShieldModal
+        isOpen={isShieldOpen}
+        onCancelExit={() => setIsShieldOpen(false)}
+        onConfirmExit={confirmEndSessionEarly}
+        studiedSeconds={Math.floor(totalElapsedMs / 1000)}
+        targetSeconds={targetDurationSec}
+        subjectName={selectedSubject.name}
+      />
 
       {/* Top Navigation Bar */}
       <TopBar
@@ -518,13 +582,14 @@ export default function App() {
         onToggleSound={handleToggleSound}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        onSelectTheme={handleSelectTheme}
         onEnterFullscreen={handleEnterFullscreen}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col">
         {activeTab === 'home' && (
-          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1 flex flex-col justify-between gap-7">
+          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 flex-1 flex flex-col justify-between gap-6">
             {/* Completion Toast Banner */}
             {completionNotice && (
               <div
@@ -551,14 +616,22 @@ export default function App() {
               </div>
             )}
 
-            {/* 1. Subject Selector */}
+            {/* 1. Subject Selector: The Core Starting Point */}
             <SubjectSelector
               subjects={subjects}
               selectedSubjectId={selectedSubject.id}
-              onSelectSubject={setSelectedSubjectId}
+              onSelectSubject={(id) => setSelectedSubjectId(id)}
               onAddSubject={handleAddSubject}
               onDeleteSubject={handleDeleteSubject}
               timerStatus={status}
+            />
+
+            {/* Micro-Commitment Pledge (Input before session, badge during session) */}
+            <MicroCommitmentPledge
+              taskGoal={taskGoal}
+              setTaskGoal={setTaskGoal}
+              isStarted={status !== 'idle'}
+              subjectName={selectedSubject.name}
             />
 
             {/* 2. The Main Timer Card with Corner Blue Ambient Glow */}
@@ -595,9 +668,9 @@ export default function App() {
                   }}
                 />
 
-                {/* Card Top Header: Mode Switcher + Selected Subject & Fullscreen Button */}
-                <div className="relative z-10 flex items-center justify-between gap-2 mb-6">
-                  {/* Pomodoro Mode Switcher */}
+                {/* Card Top Header: Mode Switcher + 90m Quick Preset + Fullscreen Trigger */}
+                <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 mb-6">
+                  {/* Mode Switcher */}
                   <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/90 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800">
                     <button
                       type="button"
@@ -609,7 +682,7 @@ export default function App() {
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 disabled:opacity-50'
                       }`}
                     >
-                      تركيز · {settings.focusMinutes} د
+                      تركيز · {currentDurationMins} د
                     </button>
                     <button
                       type="button"
@@ -625,9 +698,35 @@ export default function App() {
                     </button>
                   </div>
 
+                  {/* Focus Duration Presets when idle */}
+                  {status === 'idle' && mode === 'focus' && (
+                    <div className="inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
+                      {FOCUS_PRESETS.map((mins) => {
+                        const isCurrent = currentDurationMins === mins;
+                        return (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => handleQuickDurationChange(mins)}
+                            className={`h-7 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                              isCurrent
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
+                            }`}
+                          >
+                            <span>{mins}د</span>
+                            {mins === 90 && (
+                              <Flame className="w-2.5 h-2.5 fill-current text-amber-300" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {/* Active Subject Indicator & Fullscreen Trigger */}
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 px-2.5 py-1">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 px-2 py-1">
                       {selectedSubject.name}
                     </span>
 
@@ -655,19 +754,34 @@ export default function App() {
                   />
                 </div>
 
-                {/* Primary Controls Beneath Timer */}
+                {/* Primary Controls Beneath Timer: Frictionless Start */}
                 <div className="relative z-10 mt-7 flex flex-wrap items-center justify-center gap-3">
                   {status === 'idle' ? (
-                    <button
-                      type="button"
-                      onClick={handleStart}
-                      className="h-12 px-9 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-semibold shadow-sm shadow-blue-600/25 hover:shadow-md hover:shadow-blue-600/30 transition-all duration-150 flex items-center justify-center gap-2.5 whitespace-nowrap active:scale-[0.98]"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>
-                        {mode === 'focus' ? 'ابدأ جلسة التركيز' : 'ابدأ الاستراحة القصيرة'}
-                      </span>
-                    </button>
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleStartSession}
+                        className="h-12 px-9 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-bold shadow-sm shadow-blue-600/25 hover:shadow-md hover:shadow-blue-600/30 transition-all duration-150 flex items-center justify-center gap-2.5 whitespace-nowrap active:scale-[0.98]"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>
+                          {mode === 'focus'
+                            ? `ابدأ جلسة ${currentDurationMins} دقيقة (${selectedSubject.name})`
+                            : 'ابدأ الاستراحة القصيرة'}
+                        </span>
+                      </button>
+
+                      {mode === 'focus' && (
+                        <button
+                          type="button"
+                          onClick={handleStartAndFullscreen}
+                          className="h-12 px-5 rounded-2xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-semibold transition-all flex items-center gap-2"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5 text-blue-500" />
+                          <span>بدء وتكبير الشاشة فورًا</span>
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <>
                       {status === 'running' ? (
@@ -693,8 +807,8 @@ export default function App() {
                       {mode === 'focus' && (
                         <button
                           type="button"
-                          onClick={handleEndSessionEarly}
-                          className="h-12 px-6 rounded-2xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 text-sm font-semibold transition-all duration-150 flex items-center gap-2 whitespace-nowrap active:scale-[0.98]"
+                          onClick={handleRequestEndSessionEarly}
+                          className="h-12 px-6 rounded-2xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 text-sm font-semibold transition-all duration-150 flex items-center gap-2 whitespace-nowrap active:scale-[0.98]"
                         >
                           <Square className="w-3.5 h-3.5 fill-current" />
                           <span>إنهاء وحفظ الجلسة</span>
@@ -717,7 +831,7 @@ export default function App() {
 
             {/* 3. Simple Bottom Summary: Today's Study Time & Latest Session */}
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <div className="flex wrap items-center gap-x-3 gap-y-1">
                 <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
                   <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                   <span>وقت الدراسة اليوم:</span>
@@ -783,6 +897,8 @@ export default function App() {
             onClearAllSessions={handleClearAllSessions}
             sessionsCount={sessions.length}
             timerStatus={status}
+            theme={theme}
+            onSelectTheme={handleSelectTheme}
           />
         )}
       </main>
